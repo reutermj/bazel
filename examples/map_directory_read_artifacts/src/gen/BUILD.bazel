@@ -1,0 +1,19 @@
+# Generate a .src file at build time to demonstrate read_artifacts with generated files
+genrule(
+    name = "generated_src",
+    outs = ["generated.src"],
+    cmd = """
+cat > $@ << 'EOF'
+# generated.src - A generated source file
+# This file is created by a genrule, not checked into the repo.
+# Its exec path will be bazel-out/.../bin/src/gen/generated.src
+
+def generated_function():
+    return "Hello from generated code!"
+
+def generated_helper():
+    return 42
+EOF
+""",
+    visibility = ["//visibility:public"],
+)

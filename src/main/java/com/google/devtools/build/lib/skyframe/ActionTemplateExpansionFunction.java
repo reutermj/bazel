@@ -13,6 +13,8 @@
 // limitations under the License.
 package com.google.devtools.build.lib.skyframe;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
@@ -31,17 +33,20 @@ import com.google.devtools.build.lib.actions.AlreadyReportedActionExecutionExcep
 import com.google.devtools.build.lib.actions.Artifact;
 import com.google.devtools.build.lib.actions.Artifact.SpecialArtifact;
 import com.google.devtools.build.lib.actions.Artifact.TreeFileArtifact;
+import com.google.devtools.build.lib.actions.ArtifactContentReader;
 import com.google.devtools.build.lib.bugreport.BugReport;
 import com.google.devtools.build.lib.collect.nestedset.ArtifactNestedSetKey;
 import com.google.devtools.build.lib.collect.nestedset.NestedSet;
 import com.google.devtools.build.lib.events.Event;
 import com.google.devtools.build.lib.events.EventHandler;
 import com.google.devtools.build.lib.skyframe.ActionTemplateExpansionValue.ActionTemplateExpansionKey;
+import com.google.devtools.build.lib.vfs.FileSystemUtils;
 import com.google.devtools.build.skyframe.SkyFunction;
 import com.google.devtools.build.skyframe.SkyFunctionException;
 import com.google.devtools.build.skyframe.SkyKey;
 import com.google.devtools.build.skyframe.SkyValue;
 import com.google.devtools.build.skyframe.SkyframeLookupResult;
+import java.io.IOException;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -110,9 +115,13 @@ public class ActionTemplateExpansionFunction implements SkyFunction {
       // Expand the action template using the list of expanded input TreeFileArtifacts.
       // TODO(rduan): Add a check to verify the inputs of expanded actions are subsets of inputs
       // of the ActionTemplate.
+      // Provide an ArtifactContentReader for templates that need to read file contents
+      // (e.g., for template_ctx.read_artifacts() API).
+      ArtifactContentReader contentReader =
+          artifact -> FileSystemUtils.readContent(artifact.getPath(), UTF_8);
       actions =
           generateAndValidateActionsFromTemplate(
-              actionTemplate, inputTreeFileArtifacts.build(), key, env.getListener());
+              actionTemplate, inputTreeFileArtifacts.build(), key, env.getListener(), contentReader);
     } catch (ActionExecutionException e) {
       env.getListener()
           .handle(
@@ -159,7 +168,8 @@ public class ActionTemplateExpansionFunction implements SkyFunction {
       ActionTemplate<?> actionTemplate,
       ImmutableList<TreeFileArtifact> inputTreeFileArtifacts,
       ActionTemplateExpansionKey key,
-      EventHandler eventHandler)
+      EventHandler eventHandler,
+      ArtifactContentReader contentReader)
       throws ActionConflictException, ActionExecutionException, InterruptedException {
     Collection<Artifact> outputs = actionTemplate.getOutputs();
     for (Artifact output : outputs) {
@@ -170,7 +180,8 @@ public class ActionTemplateExpansionFunction implements SkyFunction {
           output);
     }
     ImmutableList<? extends Action> actions =
-        actionTemplate.generateActionsForInputArtifacts(inputTreeFileArtifacts, key, eventHandler);
+        actionTemplate.generateActionsForInputArtifacts(
+            inputTreeFileArtifacts, key, eventHandler, contentReader);
     for (Action action : actions) {
       for (Artifact output : action.getOutputs()) {
         Preconditions.checkState(

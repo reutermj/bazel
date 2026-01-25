@@ -1,0 +1,19 @@
+load("//rules:mod_library.bzl", "mod_library")
+
+# Build the example module library
+# The dependency graph is:
+#
+#   main.src
+#     ├── utils.src
+#     │     └── helper.src
+#     ├── math.src
+#     └── generated.src (generated file - exec path includes bazel-out/...)
+#
+# The resolver parses imports and writes manifest files.
+# map_directory uses read_artifacts() to resolve manifest paths to Files,
+# then creates compile actions with correct dependency ordering.
+
+mod_library(
+    name = "myapp",
+    srcs = glob(["src/**/*.src"]) + ["//src/gen:generated.src"],
+)

@@ -1,0 +1,15 @@
+"""Example demonstrating ctx.actions.map_directory() with template_ctx.read_artifacts().
+
+This example shows how to build a simple module system where:
+1. Source files (.src) can import other source files
+2. A resolver action parses imports and writes manifest files with dependency exec paths
+3. map_directory uses read_artifacts() to resolve manifest paths to File objects
+4. Compile actions are created with correct dependency ordering
+
+This pattern is useful for build systems like Lean's Lake that need to determine
+dependencies dynamically by reading source files.
+"""
+
+module(name = "map_directory_example")
+
+bazel_dep(name = "rules_go", version = "0.59.0")

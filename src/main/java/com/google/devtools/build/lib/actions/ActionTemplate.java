@@ -82,6 +82,34 @@ public interface ActionTemplate<T extends Action> extends ActionAnalysisMetadata
       EventHandler eventHandler)
       throws ActionConflictException, ActionExecutionException, InterruptedException;
 
+  /**
+   * Given a list of input TreeFileArtifacts resolved at execution time and an artifact content
+   * reader, returns a list of expanded actions to be executed.
+   *
+   * <p>This is an overload of {@link #generateActionsForInputArtifacts} that provides access to
+   * artifact contents during template expansion. The default implementation ignores the content
+   * reader and delegates to the original method.
+   *
+   * <p>Templates that need to read artifact contents (e.g., for the {@code
+   * template_ctx.read_artifacts()} API) should override this method.
+   *
+   * @param inputTreeFileArtifacts a list of {@link TreeFileArtifact}s from the input
+   *     TreeArtifact(s)
+   * @param artifactOwner the {@link ArtifactOwner} of the generated output {@link
+   *     TreeFileArtifact}s
+   * @param eventHandler the {@link EventHandler} to report events to
+   * @param contentReader an interface for reading artifact contents, or null if not available
+   * @return a list of expanded {@link Action}s to execute
+   */
+  default ImmutableList<T> generateActionsForInputArtifacts(
+      ImmutableList<TreeFileArtifact> inputTreeFileArtifacts,
+      ActionLookupKey artifactOwner,
+      EventHandler eventHandler,
+      @Nullable ArtifactContentReader contentReader)
+      throws ActionConflictException, ActionExecutionException, InterruptedException {
+    return generateActionsForInputArtifacts(inputTreeFileArtifacts, artifactOwner, eventHandler);
+  }
+
   /** Returns the input TreeArtifacts. */
   ImmutableList<SpecialArtifact> getInputTreeArtifacts();
 

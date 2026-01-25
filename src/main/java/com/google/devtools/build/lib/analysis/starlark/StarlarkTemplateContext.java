@@ -23,6 +23,7 @@ import com.google.devtools.build.lib.actions.Artifact;
 import com.google.devtools.build.lib.actions.Artifact.SpecialArtifact;
 import com.google.devtools.build.lib.actions.Artifact.SpecialArtifactType;
 import com.google.devtools.build.lib.actions.Artifact.TreeFileArtifact;
+import com.google.devtools.build.lib.actions.ArtifactContentReader;
 import com.google.devtools.build.lib.analysis.FilesToRunProvider;
 import com.google.devtools.build.lib.analysis.actions.SpawnAction;
 import com.google.devtools.build.lib.cmdline.RepositoryMapping;
@@ -31,10 +32,13 @@ import com.google.devtools.build.lib.starlarkbuildapi.FileApi;
 import com.google.devtools.build.lib.starlarkbuildapi.StarlarkTemplateContextApi;
 import com.google.devtools.build.lib.supplier.InterruptibleSupplier;
 import com.google.devtools.build.lib.vfs.PathFragment;
+import java.io.IOException;
 import java.util.List;
+import javax.annotation.Nullable;
 import net.starlark.java.eval.EvalException;
 import net.starlark.java.eval.Sequence;
 import net.starlark.java.eval.Starlark;
+import net.starlark.java.eval.StarlarkList;
 import net.starlark.java.eval.StarlarkSemantics;
 import net.starlark.java.eval.StarlarkThread;
 
@@ -48,6 +52,8 @@ public final class StarlarkTemplateContext implements StarlarkTemplateContextApi
   private final InterruptibleSupplier<RepositoryMapping> repoMappingSupplier;
   private final ImmutableSet<SpecialArtifact> outputDirectories;
   private final ImmutableMap<String, String> executionInfo;
+  private final ImmutableMap<PathFragment, Artifact> execPathToArtifact;
+  @Nullable private final ArtifactContentReader contentReader;
   private ImmutableList.Builder<AbstractAction> actions = ImmutableList.builder();
 
   public StarlarkTemplateContext(
@@ -57,7 +63,9 @@ public final class StarlarkTemplateContext implements StarlarkTemplateContextApi
       SpawnAction.Builder spawnActionBuilder,
       InterruptibleSupplier<RepositoryMapping> repoMappingSupplier,
       ImmutableSet<SpecialArtifact> outputDirectories,
-      ImmutableMap<String, String> executionInfo) {
+      ImmutableMap<String, String> executionInfo,
+      ImmutableMap<PathFragment, Artifact> execPathToArtifact,
+      @Nullable ArtifactContentReader contentReader) {
     this.semantics = semantics;
     this.actionOwner = actionOwner;
     this.artifactOwner = artifactOwner;
@@ -65,6 +73,8 @@ public final class StarlarkTemplateContext implements StarlarkTemplateContextApi
     this.repoMappingSupplier = repoMappingSupplier;
     this.outputDirectories = outputDirectories;
     this.executionInfo = executionInfo;
+    this.execPathToArtifact = execPathToArtifact;
+    this.contentReader = contentReader;
   }
 
   @Override
@@ -176,5 +186,67 @@ public final class StarlarkTemplateContext implements StarlarkTemplateContextApi
 
   public void close() {
     actions = null;
+  }
+
+  @Override
+  public Sequence<FileApi> readArtifacts(FileApi file) throws EvalException, IOException {
+    if (contentReader == null) {
+      throw Starlark.errorf(
+          "read_artifacts is not supported in this context. "
+              + "The template expansion must have access to artifact contents.");
+    }
+
+    Artifact manifestArtifact = (Artifact) file;
+
+    // Validate manifest is a known input
+    if (!execPathToArtifact.containsValue(manifestArtifact)) {
+      throw Starlark.errorf(
+          "Manifest file %s is not a known input to this map_directory call. "
+              + "Valid inputs are artifacts from input_directories, additional_inputs, and tools.",
+          manifestArtifact.getExecPathString());
+    }
+
+    // Read and parse manifest
+    String contents = contentReader.readContents(manifestArtifact);
+    ImmutableList<String> paths = parseManifest(contents);
+
+    // Resolve paths to artifacts
+    ImmutableList.Builder<FileApi> result = ImmutableList.builder();
+    for (String path : paths) {
+      PathFragment pathFragment = PathFragment.create(path);
+      Artifact resolved = execPathToArtifact.get(pathFragment);
+      if (resolved == null) {
+        throw Starlark.errorf(
+            "Path '%s' in manifest does not correspond to any known input artifact. "
+                + "Valid inputs are artifacts from input_directories, additional_inputs, and tools.",
+            path);
+      }
+      result.add(resolved);
+    }
+
+    return StarlarkList.immutableCopyOf(result.build());
+  }
+
+  /**
+   * Parses a manifest file containing exec paths.
+   *
+   * <p>Format rules:
+   * <ul>
+   *   <li>One path per line
+   *   <li>Empty lines are ignored
+   *   <li>Lines starting with '#' are treated as comments and ignored
+   *   <li>Whitespace is trimmed from each line
+   * </ul>
+   */
+  private static ImmutableList<String> parseManifest(String contents) {
+    ImmutableList.Builder<String> paths = ImmutableList.builder();
+    for (String line : contents.split("\n")) {
+      String trimmed = line.trim();
+      if (trimmed.isEmpty() || trimmed.startsWith("#")) {
+        continue;
+      }
+      paths.add(trimmed);
+    }
+    return paths.build();
   }
 }

@@ -1,0 +1,8 @@
+# helper.src - No dependencies (leaf module)
+# This is a utility module that other modules depend on.
+
+def helper_function():
+    return "I am the helper"
+
+def format_greeting(name):
+    return "Hello, " + name + "!"

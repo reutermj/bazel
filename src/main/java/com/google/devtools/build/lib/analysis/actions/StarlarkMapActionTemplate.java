@@ -34,6 +34,7 @@ import com.google.devtools.build.lib.actions.ActionTemplate;
 import com.google.devtools.build.lib.actions.Artifact;
 import com.google.devtools.build.lib.actions.Artifact.SpecialArtifact;
 import com.google.devtools.build.lib.actions.Artifact.TreeFileArtifact;
+import com.google.devtools.build.lib.actions.ArtifactContentReader;
 import com.google.devtools.build.lib.actions.CommandLineExpansionException;
 import com.google.devtools.build.lib.actions.InputMetadataProvider;
 import com.google.devtools.build.lib.analysis.FilesToRunProvider;
@@ -53,6 +54,7 @@ import com.google.devtools.build.lib.starlarkbuildapi.FileApi;
 import com.google.devtools.build.lib.supplier.InterruptibleSupplier;
 import com.google.devtools.build.lib.util.DetailedExitCode;
 import com.google.devtools.build.lib.util.Fingerprint;
+import com.google.devtools.build.lib.vfs.PathFragment;
 import java.util.Map.Entry;
 import javax.annotation.Nullable;
 import net.starlark.java.eval.Dict;
@@ -209,9 +211,24 @@ public final class StarlarkMapActionTemplate extends ActionKeyComputer
       ActionLookupKey artifactOwner,
       EventHandler eventHandler)
       throws ActionConflictException, ActionExecutionException, InterruptedException {
+    return generateActionsForInputArtifacts(
+        inputTreeFileArtifacts, artifactOwner, eventHandler, /* contentReader= */ null);
+  }
+
+  @Override
+  public ImmutableList<AbstractAction> generateActionsForInputArtifacts(
+      ImmutableList<TreeFileArtifact> inputTreeFileArtifacts,
+      ActionLookupKey artifactOwner,
+      EventHandler eventHandler,
+      @Nullable ArtifactContentReader contentReader)
+      throws ActionConflictException, ActionExecutionException, InterruptedException {
 
     ImmutableListMultimap<SpecialArtifact, TreeFileArtifact> inputTreeArtifactsToChildren =
         ActionTemplate.getInputTreeArtifactsToChildren(inputTreeFileArtifacts);
+
+    // Build the exec path to artifact lookup map for read_artifacts()
+    ImmutableMap<PathFragment, Artifact> execPathToArtifact =
+        buildExecPathToArtifactMap(inputTreeFileArtifacts);
 
     StarlarkTemplateContext context =
         new StarlarkTemplateContext(
@@ -221,7 +238,9 @@ public final class StarlarkMapActionTemplate extends ActionKeyComputer
             spawnActionBuilder,
             () -> repoMapping,
             ImmutableSet.copyOf(outputDirectories.values()),
-            getExecutionInfo());
+            getExecutionInfo(),
+            execPathToArtifact,
+            contentReader);
 
     ImmutableMap.Builder<String, ExpandedDirectory> expandedDirectories = ImmutableMap.builder();
     for (Entry<String, SpecialArtifact> entry : inputDirectories.entrySet()) {
@@ -263,6 +282,57 @@ public final class StarlarkMapActionTemplate extends ActionKeyComputer
           e, this, /* catastrophe= */ true, makeDetailedExitCode(e.getMessage()));
     } finally {
       context.close();
+    }
+  }
+
+  /**
+   * Builds a map from exec path to artifact for all known input artifacts.
+   *
+   * <p>This is used by {@code template_ctx.read_artifacts()} to resolve paths in manifest files to
+   * actual Artifact objects.
+   */
+  private ImmutableMap<PathFragment, Artifact> buildExecPathToArtifactMap(
+      ImmutableList<TreeFileArtifact> inputTreeFileArtifacts) {
+    ImmutableMap.Builder<PathFragment, Artifact> builder = ImmutableMap.builder();
+
+    // Add all TreeFileArtifacts from input directories
+    for (TreeFileArtifact treeFileArtifact : inputTreeFileArtifacts) {
+      builder.put(treeFileArtifact.getExecPath(), treeFileArtifact);
+    }
+
+    // Add artifacts from additionalInputs
+    addArtifactsToMap(additionalInputs, builder);
+
+    // Add artifacts from tools
+    addArtifactsToMap(tools, builder);
+
+    return builder.buildOrThrow();
+  }
+
+  private void addArtifactsToMap(
+      Dict<String, Object> dict, ImmutableMap.Builder<PathFragment, Artifact> builder) {
+    for (Object value : dict.values()) {
+      switch (value) {
+        case Artifact artifact -> builder.put(artifact.getExecPath(), artifact);
+        case FilesToRunProvider filesToRunProvider -> {
+          for (Artifact artifact : filesToRunProvider.getFilesToRun().toList()) {
+            builder.put(artifact.getExecPath(), artifact);
+          }
+        }
+        case Depset depset -> {
+          try {
+            for (Artifact artifact : Depset.cast(depset, Artifact.class, "unused").toList()) {
+              builder.put(artifact.getExecPath(), artifact);
+            }
+          } catch (EvalException e) {
+            // This should not happen as we've already validated the types
+            throw new IllegalStateException(e);
+          }
+        }
+        default -> {
+          // Ignore other types
+        }
+      }
     }
   }
 

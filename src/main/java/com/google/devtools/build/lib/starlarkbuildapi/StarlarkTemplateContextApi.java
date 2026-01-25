@@ -15,6 +15,7 @@ package com.google.devtools.build.lib.starlarkbuildapi;
 
 import com.google.devtools.build.docgen.annot.DocCategory;
 import com.google.devtools.build.lib.collect.nestedset.Depset;
+import java.io.IOException;
 import net.starlark.java.annot.Param;
 import net.starlark.java.annot.ParamType;
 import net.starlark.java.annot.StarlarkBuiltin;
@@ -134,4 +135,25 @@ public interface StarlarkTemplateContextApi extends StarlarkValue {
       Sequence<?> arguments,
       Object progressMessage)
       throws EvalException, InterruptedException;
+
+  @StarlarkMethod(
+      name = "read_artifacts",
+      doc =
+          "Reads a manifest file containing artifact exec paths and returns the corresponding "
+              + "File objects. The manifest file must be one of the inputs to this map_directory "
+              + "call. Each line in the manifest should contain an exec path that resolves to a "
+              + "known input artifact. Empty lines and lines starting with '#' are ignored."
+              + "<p>This enables dynamic dependency discovery while keeping expensive parsing "
+              + "logic in compiled actions rather than Starlark. For example, a resolver action "
+              + "can parse source files for imports and write a manifest file listing the exec "
+              + "paths of dependent artifacts. Then the map_directory implementation can use "
+              + "read_artifacts to resolve those paths to File objects for use in template_ctx.run().",
+      parameters = {
+        @Param(
+            name = "file",
+            doc =
+                "The manifest file to read. Must be a known input to this map_directory call "
+                    + "(from input_directories, additional_inputs, or tools).")
+      })
+  Sequence<FileApi> readArtifacts(FileApi file) throws EvalException, IOException;
 }

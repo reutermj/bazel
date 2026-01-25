@@ -1,0 +1,30 @@
+# main.src - The main application
+# Depends on utils (which depends on helper), math, and a generated file
+import src/lib/utils.src
+import src/lib/math.src
+import src/gen/generated.src
+
+def main():
+    # Use utility function (which internally uses helper)
+    result = utility_function()
+    print(result)
+
+    # Use math functions
+    sum = add(5, 3)
+    product = multiply(4, 7)
+    fact = factorial(5)
+
+    print("5 + 3 = " + str(sum))
+    print("4 * 7 = " + str(product))
+    print("5! = " + str(fact))
+
+    # Use formatted greeting
+    greeting = format_greeting("World")
+    print(greeting)
+
+    # Use generated code
+    gen_result = generated_function()
+    print(gen_result)
+
+# Entry point
+main()

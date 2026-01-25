@@ -64,6 +64,7 @@ java_library(
         "ActionStartedEvent.java",
         "ActionTemplate.java",
         "ActionUploadFinishedEvent.java",
+        "ArtifactContentReader.java",
         "ActionUploadStartedEvent.java",
         "Actions.java",
         "AggregatedSpawnMetrics.java",

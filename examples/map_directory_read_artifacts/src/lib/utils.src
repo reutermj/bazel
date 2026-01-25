@@ -1,0 +1,11 @@
+# utils.src - Depends on helper
+import src/lib/helper.src
+
+def utility_function():
+    # Uses helper_function from helper module
+    msg = helper_function()
+    return "Utils says: " + msg
+
+def process_data(data):
+    greeting = format_greeting("Utils")
+    return greeting + " processing: " + data

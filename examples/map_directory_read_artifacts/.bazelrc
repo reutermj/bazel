@@ -1,0 +1,2 @@
+# Enable map_directory (experimental feature)
+build --experimental_allow_map_directory
